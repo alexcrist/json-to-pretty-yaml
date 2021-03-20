@@ -19,7 +19,14 @@
                         return value
                     }
                 } catch (e) {}
-                return JSON.stringify(value)
+                let str = YAML.dump(value)
+                if (str.match(/^>\s*\n/)) {
+                    str = '|' + str.slice(1).replaceAll('\n\n', '\n')
+                }
+                if (str[0] === '|') {
+                    str = str.replaceAll(/(?<=\n)^/mg, indentLevel)
+                }
+                return str
             },
             "array": value => {
                 if (0 === value.length) {
@@ -64,7 +71,7 @@
                 }
 
                 if (!rootNode) {
-                    indentLevel = indentLevel.replace(/$/, '  ')
+                    indentLevel += '  '
                 }
 
                 Object.keys(value).forEach((k, i) => {

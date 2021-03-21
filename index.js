@@ -1,72 +1,81 @@
 (function() {
     "use strict";
+    const typeOf = require('remedial').typeOf;
+    const trimWhitespace = require('remove-trailing-spaces');
+    const YAML = require('js-yaml')
+    const stringify = data => {
+        let indentLevel = ''
+        const handlers = {
+            "undefined": () => 'null',
+            // objects will not have `undefined` converted to `null`
+            // as this may have unintended consequences
+            // For arrays, however, this behavior seems appropriate
+            "null": () => 'null',
+            "number": value => value,
+            "boolean": value => value ? 'true' : 'false',
+            "string": value => {
+                try {
+                    if (YAML.load(value) === value) {
+                        return value
+                    }
+                } catch (e) {}
+                let str = YAML.dump(value)
+                if (str.match(/^>\s*\n/)) {
+                    str = '|' + str.slice(1).replaceAll('\n\n', '\n')
+                }
+                if (str[0] === '|') {
+                    str = str.replaceAll(/(?<=\n)^/mg, indentLevel)
+                }
+                return str
+            },
+            "array": value => {
+                if (0 === value.length) {
+                    return '[]'
+                }
+                let output = ''
+                indentLevel = indentLevel.replace(/$/, '  ')
 
-    var typeOf = require('remedial').typeOf;
-    var trimWhitespace = require('remove-trailing-spaces');
+                let short = true
+                value.forEach(value => {
+                    const type = typeOf(value)
+                    if (type === 'array' || type === 'object') {
+                        short = false
+                    } else if (type === 'string' && value.match(/\$/)) {
+                        short = false
+                    }
+                })
 
-    function stringify(data) {
-        var handlers, indentLevel = '';
+                value.forEach((y, i) => {
+                    if (short) {
+                        output += (i > 0 ? ', ' : '[ ') + handle(y)
+                    } else {
+                        output += '\n' + indentLevel + '- ' + handle(y, true)
+                    }
+                })
 
-        handlers = {
-            "undefined": function() {
-                // objects will not have `undefined` converted to `null`
-                // as this may have unintended consequences
-                // For arrays, however, this behavior seems appropriate
-                return 'null';
-            },
-            "null": function() {
-                return 'null';
-            },
-            "number": function(x) {
-                return x;
-            },
-            "boolean": function(x) {
-                return x ? 'true' : 'false';
-            },
-            "string": function(x) {
-                // to avoid the string "true" being confused with the
-                // the literal `true`, we always wrap strings in quotes
-                return JSON.stringify(x);
-            },
-            "array": function(x) {
-                var output = '';
-
-                if (0 === x.length) {
-                    output += '[]';
-                    return output;
+                if (short) {
+                    output += ' ]'
                 }
 
-                indentLevel = indentLevel.replace(/$/, '  ');
-                x.forEach(function(y, i) {
-                    // TODO how should `undefined` be handled?
-                    var handler = handlers[typeOf(y)];
+                indentLevel = indentLevel.replace(/  /, '')
 
-                    if (!handler) {
-                        throw new Error('what the crap: ' + typeOf(y));
-                    }
-
-                    output += '\n' + indentLevel + '- ' + handler(y, true);
-
-                });
-                indentLevel = indentLevel.replace(/  /, '');
-
-                return output;
+                return output
             },
-            "object": function(x, inArray, rootNode) {
-                var output = '';
+            "object": (value, inArray, rootNode) => {
 
-                if (0 === Object.keys(x).length) {
-                    output += '{}';
+                var output = ''
+
+                if (0 === Object.keys(value).length) {
+                    output += '{}'
                     return output;
                 }
 
                 if (!rootNode) {
-                    indentLevel = indentLevel.replace(/$/, '  ');
+                    indentLevel += '  '
                 }
 
-                Object.keys(x).forEach(function(k, i) {
-                    var val = x[k],
-                        handler = handlers[typeOf(val)];
+                Object.keys(value).forEach((k, i) => {
+                    const val = value[k]
 
                     if ('undefined' === typeof val) {
                         // the user should do
@@ -74,31 +83,36 @@
                         // and not
                         // obj.key = undefined
                         // but we'll error on the side of caution
-                        return;
-                    }
-
-                    if (!handler) {
-                        throw new Error('what the crap: ' + typeOf(val));
+                        return
                     }
 
                     if (!(inArray && i === 0)) {
-                        output += '\n' + indentLevel;
+                        output += '\n' + indentLevel
                     }
 
-                    output += k + ': ' + handler(val);
+                    if (val === null) {
+                        output += k + ':'
+                    } else {
+                        output += k + ': ' + handle(val)
+                    }
                 });
-                indentLevel = indentLevel.replace(/  /, '');
+                indentLevel = indentLevel.replace(/  /, '')
 
                 return output;
             },
-            "function": function() {
+            "function": function () {
                 // TODO this should throw or otherwise be ignored
                 return '[object Function]';
             }
-        };
+        }
 
-        return trimWhitespace(handlers[typeOf(data)](data, true, true) + '\n');
+        const handle = (value, inArray, parentNode) => {
+            const type = typeOf(value)
+            return handlers[type](value, inArray, parentNode)
+        }
+
+        return trimWhitespace(handle(data, true, true) + '\n');
     }
 
-    module.exports.stringify = stringify;
-}());
+    module.exports = {stringify}
+})()
